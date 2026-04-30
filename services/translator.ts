@@ -35,7 +35,8 @@ async function generateWithRetry(
       const waitMs = retryMatch ? parseInt(retryMatch[1]) * 1000 : 15_000;
 
       if (is429 && attempt < maxRetries - 1) {
-        await sleep(waitMs);
+        // Vercel 함수 타임아웃 안에 처리되도록 최대 3초만 대기
+        await sleep(Math.min(waitMs, 3000));
         continue;
       }
       throw err;

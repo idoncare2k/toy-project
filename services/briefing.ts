@@ -2,20 +2,36 @@ import { unstable_cache } from "next/cache";
 import { fetchYield, fetchExchangeRate } from "./market-data";
 import { fetchEnglishNews, fetchKoreanNews } from "./news-fetcher";
 import { translateAndSummarize } from "./translator";
-import type { BriefingData, BriefingSection, ArticleSummary } from "@/types/market";
+import type { BriefingData, BriefingSection, ArticleSummary, MarketSeries } from "@/types/market";
 
 const YIELD_KEYWORD_EN = "treasury yield";
 const EXCHANGE_KEYWORD_KO = "원달러 환율";
 
-// Gemini 무료 티어 분당 5회 한도 대응 — 순차 처리
+const EMPTY_SERIES: MarketSeries = {
+  symbol: "", label: "", unit: "", data: [], lastUpdated: new Date().toISOString(),
+};
+
+const EMPTY_BRIEFING: BriefingData = {
+  yieldSection: { indicator: EMPTY_SERIES, articles: [] },
+  exchangeRateSection: { indicator: EMPTY_SERIES, articles: [] },
+  lastUpdatedAt: new Date().toISOString(),
+};
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+// 번역 호출 간 3초 간격 — Gemini 20 RPM 한도 안전하게 소비
 async function processArticles(
   rawArticles: { source: string; publishedAt: string; title: string; description: string; url: string }[],
   isKorean: boolean
 ): Promise<ArticleSummary[]> {
   const results: ArticleSummary[] = [];
-  for (const a of rawArticles) {
+  for (let i = 0; i < rawArticles.length; i++) {
+    const a = rawArticles[i];
     const { description: _desc, ...rest } = a;
     const input = a.description || a.title;
+    if (i > 0) await sleep(3000); // 호출 간 3초 간격
     try {
       const { summaryLines, content } = await translateAndSummarize(input, isKorean);
       results.push({ ...rest, summaryLines, content });
@@ -32,9 +48,7 @@ async function buildYieldSection(): Promise<BriefingSection> {
     fetchYield(),
     fetchEnglishNews(YIELD_KEYWORD_EN),
   ]);
-
   const articles = await processArticles(rawArticles, false);
-
   return {
     indicator: {
       symbol: "^TNX",
@@ -53,9 +67,7 @@ async function buildExchangeSection(): Promise<BriefingSection> {
     fetchExchangeRate(),
     fetchKoreanNews(EXCHANGE_KEYWORD_KO),
   ]);
-
   const articles = await processArticles(rawArticles, true);
-
   return {
     indicator: {
       symbol: "KRW=X",
@@ -70,9 +82,14 @@ async function buildExchangeSection(): Promise<BriefingSection> {
 }
 
 export async function fetchBriefingData(): Promise<BriefingData> {
+  // 빌드 시점에는 빈 데이터 반환 — Gemini 호출로 인한 빌드 타임아웃 방지
+  if (process.env.NEXT_PHASE === "phase-production-build") {
+    return EMPTY_BRIEFING;
+  }
+
   const lastUpdatedAt = new Date().toISOString();
-  // 두 섹션도 순차 처리 — 번역 API 동시 호출 최소화
   const yieldSection = await buildYieldSection();
+  await sleep(3000); // 두 섹션 사이 3초 간격
   const exchangeRateSection = await buildExchangeSection();
   return { yieldSection, exchangeRateSection, lastUpdatedAt };
 }
