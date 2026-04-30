@@ -1,6 +1,7 @@
 import type { MarketDataPoint, MarketFetchResult } from "@/types/market";
 
 const YAHOO_API = "https://query1.finance.yahoo.com/v8/finance/chart";
+const FETCH_TIMEOUT_MS = 5_000;
 
 function unixToDate(unix: number): string {
   return new Date(unix * 1000).toISOString().split("T")[0];
@@ -9,7 +10,7 @@ function unixToDate(unix: number): string {
 async function fetchMarketData(symbol: string): Promise<MarketFetchResult> {
   try {
     const url = `${YAHOO_API}/${encodeURIComponent(symbol)}?interval=1d&range=10d`;
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const json = await res.json();
@@ -20,8 +21,8 @@ async function fetchMarketData(symbol: string): Promise<MarketFetchResult> {
     const closes: (number | null)[] = result.indicators?.quote?.[0]?.close ?? [];
 
     const points: MarketDataPoint[] = timestamps
-      .map((ts, i) => ({ date: unixToDate(ts), value: closes[i] ?? 0 }))
-      .filter((p) => p.value !== 0)
+      .map((ts, i) => ({ date: unixToDate(ts), value: closes[i] }))
+      .filter((p): p is { date: string; value: number } => p.value !== null)
       .slice(-7);
 
     return { data: points };

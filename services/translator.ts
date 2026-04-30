@@ -5,12 +5,22 @@ type TranslationResult = {
   content: string;
 };
 
+// 지연 초기화 싱글톤 — 첫 실제 호출 시에만 생성 (테스트 환경에서 jsdom 충돌 방지)
+let _client: Anthropic | undefined;
+function getDefaultClient(): Anthropic {
+  return (_client ??= new Anthropic());
+}
+
 export async function translateAndSummarize(
   text: string,
   isKorean: boolean,
-  client: Pick<Anthropic, "messages"> = new Anthropic()
+  client: Pick<Anthropic, "messages"> = getDefaultClient()
 ): Promise<TranslationResult> {
-  const prompt = isKorean
+  const systemPrompt = isKorean
+    ? "당신은 한국어 금융 기사를 읽고 핵심을 요약하는 전문가입니다. 반드시 유효한 JSON만 출력하세요."
+    : "당신은 영문 금융 기사를 한국어로 번역하고 요약하는 전문가입니다. 반드시 유효한 JSON만 출력하세요.";
+
+  const userPrompt = isKorean
     ? `다음 한국어 기사를 읽고 JSON으로 응답하세요.
 - summaryLines: 핵심 내용 3줄 (각 1문장, 한국어)
 - content: 원문 그대로 (번역하지 말 것)
@@ -33,7 +43,14 @@ ${text}
   const message = await client.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 2048,
-    messages: [{ role: "user", content: prompt }],
+    system: [
+      {
+        type: "text",
+        text: systemPrompt,
+        cache_control: { type: "ephemeral" },
+      },
+    ],
+    messages: [{ role: "user", content: userPrompt }],
   });
 
   const raw = message.content[0].type === "text" ? message.content[0].text : "";

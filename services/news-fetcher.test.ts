@@ -89,7 +89,7 @@ describe("fetchKoreanNews", () => {
     expect(result.length).toBeLessThanOrEqual(2);
   });
 
-  it("falls back to RSS when Naver API key is not set", async () => {
+  it("returns empty array when NAVER API key is not set", async () => {
     // When no Naver key, should gracefully return empty array or fallback
     const result = await fetchKoreanNews("원달러 환율");
     // Without env vars set, should not throw

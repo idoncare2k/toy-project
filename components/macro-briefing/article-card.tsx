@@ -8,6 +8,14 @@ type Props = {
   article: ArticleSummary;
 };
 
+function isSafeUrl(url: string): boolean {
+  try {
+    return new URL(url).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleString("ko-KR", {
@@ -47,15 +55,17 @@ export function ArticleCard({ article }: Props) {
 
         <p className="text-sm leading-relaxed">{article.content}</p>
 
-        <a
-          href={article.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors w-fit"
-        >
-          <ExternalLink className="size-3" />
-          원문 보기
-        </a>
+        {isSafeUrl(article.url) && (
+          <a
+            href={article.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors w-fit"
+          >
+            <ExternalLink className="size-3" />
+            원문 보기
+          </a>
+        )}
       </CardContent>
     </Card>
   );

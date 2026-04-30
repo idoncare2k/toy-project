@@ -1,7 +1,16 @@
 import { XMLParser } from "fast-xml-parser";
-import type { ArticleSummary } from "@/types/market";
 
-type RawArticle = Pick<ArticleSummary, "source" | "publishedAt" | "title" | "url">;
+const FETCH_TIMEOUT_MS = 5_000;
+
+type RawArticle = {
+  source: string;
+  publishedAt: string;
+  title: string;
+  description: string;
+  url: string;
+};
+
+export type { RawArticle };
 
 // MVP 영문 소스 티어 매핑 (Bloomberg/WSJ 공개 RSS 없음 → FT·Reuters 1티어 대체)
 const ENGLISH_TIERS: { name: string; rss: string }[][] = [
@@ -15,9 +24,12 @@ const ENGLISH_TIERS: { name: string; rss: string }[][] = [
 
 const parser = new XMLParser({ ignoreAttributes: false });
 
-async function fetchRssArticles(source: { name: string; rss: string }, keyword: string): Promise<RawArticle[]> {
+async function fetchRssArticles(
+  source: { name: string; rss: string },
+  keyword: string
+): Promise<RawArticle[]> {
   try {
-    const res = await fetch(source.rss);
+    const res = await fetch(source.rss, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!res.ok) return [];
     const xml = await res.text();
     const data = parser.parse(xml);
@@ -36,6 +48,7 @@ async function fetchRssArticles(source: { name: string; rss: string }, keyword: 
         source: source.name,
         publishedAt: String(item.pubDate ?? new Date().toISOString()),
         title: String(item.title ?? ""),
+        description: String(item.description ?? ""),
         url: String(item.link ?? ""),
       }));
   } catch {
@@ -65,6 +78,7 @@ export async function fetchKoreanNews(keyword: string): Promise<RawArticle[]> {
         "X-Naver-Client-Id": clientId,
         "X-Naver-Client-Secret": clientSecret,
       },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!res.ok) return [];
 
@@ -75,6 +89,7 @@ export async function fetchKoreanNews(keyword: string): Promise<RawArticle[]> {
       source: extractKoreanSource(item.originallink ?? item.link ?? ""),
       publishedAt: item.pubDate ?? new Date().toISOString(),
       title: item.title?.replace(/<[^>]+>/g, "") ?? "",
+      description: item.description?.replace(/<[^>]+>/g, "") ?? "",
       url: item.originallink ?? item.link ?? "",
     }));
   } catch {
