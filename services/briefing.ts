@@ -17,9 +17,15 @@ async function buildYieldSection(): Promise<BriefingSection> {
   const settled = await Promise.allSettled(
     rawArticles.map(async (a): Promise<ArticleSummary> => {
       const input = a.description || a.title;
-      const { summaryLines, content } = await translateAndSummarize(input, false);
       const { description: _desc, ...rest } = a;
-      return { ...rest, summaryLines, content };
+      try {
+        const { summaryLines, content } = await translateAndSummarize(input, false);
+        return { ...rest, summaryLines, content };
+      } catch {
+        // Claude API 실패 시 원문 그대로 표시
+        const plainDesc = input.replace(/<[^>]+>/g, "").trim();
+        return { ...rest, summaryLines: [a.title, "", ""], content: plainDesc || a.title };
+      }
     })
   );
 
@@ -49,9 +55,15 @@ async function buildExchangeSection(): Promise<BriefingSection> {
   const settled = await Promise.allSettled(
     rawArticles.map(async (a): Promise<ArticleSummary> => {
       const input = a.description || a.title;
-      const { summaryLines, content } = await translateAndSummarize(input, true);
       const { description: _desc, ...rest } = a;
-      return { ...rest, summaryLines, content };
+      try {
+        const { summaryLines, content } = await translateAndSummarize(input, true);
+        return { ...rest, summaryLines, content };
+      } catch {
+        // Claude API 실패 시 원문 그대로 표시
+        const plainDesc = input.replace(/<[^>]+>/g, "").trim();
+        return { ...rest, summaryLines: [a.title, "", ""], content: plainDesc || a.title };
+      }
     })
   );
 
@@ -81,6 +93,7 @@ export async function fetchBriefingData(): Promise<BriefingData> {
   return { yieldSection, exchangeRateSection, lastUpdatedAt };
 }
 
-export const getBriefingData = unstable_cache(fetchBriefingData, ["briefing"], {
-  revalidate: 86400,
-});
+export const getBriefingData =
+  process.env.NODE_ENV === "development"
+    ? fetchBriefingData
+    : unstable_cache(fetchBriefingData, ["briefing"], { revalidate: 86400 });
