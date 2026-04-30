@@ -6,8 +6,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
-  title: "Kanban Todo",
-  description: "Kanban board application",
+  title: "매크로 브리핑",
+  description: "미국채 10년물 금리·원달러 환율 주간 추이와 관련 뉴스 브리핑",
 };
 
 export default function RootLayout({
