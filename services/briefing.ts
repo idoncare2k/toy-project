@@ -4,9 +4,28 @@ import { fetchEnglishNews, fetchKoreanNews } from "./news-fetcher";
 import { translateAndSummarize } from "./translator";
 import type { BriefingData, BriefingSection, ArticleSummary } from "@/types/market";
 
-// 영문 키워드(영문 RSS), 한글 키워드(Naver API)
 const YIELD_KEYWORD_EN = "treasury yield";
 const EXCHANGE_KEYWORD_KO = "원달러 환율";
+
+// Gemini 무료 티어 분당 5회 한도 대응 — 순차 처리
+async function processArticles(
+  rawArticles: { source: string; publishedAt: string; title: string; description: string; url: string }[],
+  isKorean: boolean
+): Promise<ArticleSummary[]> {
+  const results: ArticleSummary[] = [];
+  for (const a of rawArticles) {
+    const { description: _desc, ...rest } = a;
+    const input = a.description || a.title;
+    try {
+      const { summaryLines, content } = await translateAndSummarize(input, isKorean);
+      results.push({ ...rest, summaryLines, content });
+    } catch {
+      const plainDesc = input.replace(/<[^>]+>/g, "").trim();
+      results.push({ ...rest, summaryLines: [a.title, "", ""], content: plainDesc || a.title });
+    }
+  }
+  return results;
+}
 
 async function buildYieldSection(): Promise<BriefingSection> {
   const [marketResult, rawArticles] = await Promise.all([
@@ -14,24 +33,7 @@ async function buildYieldSection(): Promise<BriefingSection> {
     fetchEnglishNews(YIELD_KEYWORD_EN),
   ]);
 
-  const settled = await Promise.allSettled(
-    rawArticles.map(async (a): Promise<ArticleSummary> => {
-      const input = a.description || a.title;
-      const { description: _desc, ...rest } = a;
-      try {
-        const { summaryLines, content } = await translateAndSummarize(input, false);
-        return { ...rest, summaryLines, content };
-      } catch {
-        // Claude API 실패 시 원문 그대로 표시
-        const plainDesc = input.replace(/<[^>]+>/g, "").trim();
-        return { ...rest, summaryLines: [a.title, "", ""], content: plainDesc || a.title };
-      }
-    })
-  );
-
-  const articles: ArticleSummary[] = settled
-    .filter((r): r is PromiseFulfilledResult<ArticleSummary> => r.status === "fulfilled")
-    .map((r) => r.value);
+  const articles = await processArticles(rawArticles, false);
 
   return {
     indicator: {
@@ -52,24 +54,7 @@ async function buildExchangeSection(): Promise<BriefingSection> {
     fetchKoreanNews(EXCHANGE_KEYWORD_KO),
   ]);
 
-  const settled = await Promise.allSettled(
-    rawArticles.map(async (a): Promise<ArticleSummary> => {
-      const input = a.description || a.title;
-      const { description: _desc, ...rest } = a;
-      try {
-        const { summaryLines, content } = await translateAndSummarize(input, true);
-        return { ...rest, summaryLines, content };
-      } catch {
-        // Claude API 실패 시 원문 그대로 표시
-        const plainDesc = input.replace(/<[^>]+>/g, "").trim();
-        return { ...rest, summaryLines: [a.title, "", ""], content: plainDesc || a.title };
-      }
-    })
-  );
-
-  const articles: ArticleSummary[] = settled
-    .filter((r): r is PromiseFulfilledResult<ArticleSummary> => r.status === "fulfilled")
-    .map((r) => r.value);
+  const articles = await processArticles(rawArticles, true);
 
   return {
     indicator: {
@@ -86,10 +71,9 @@ async function buildExchangeSection(): Promise<BriefingSection> {
 
 export async function fetchBriefingData(): Promise<BriefingData> {
   const lastUpdatedAt = new Date().toISOString();
-  const [yieldSection, exchangeRateSection] = await Promise.all([
-    buildYieldSection(),
-    buildExchangeSection(),
-  ]);
+  // 두 섹션도 순차 처리 — 번역 API 동시 호출 최소화
+  const yieldSection = await buildYieldSection();
+  const exchangeRateSection = await buildExchangeSection();
   return { yieldSection, exchangeRateSection, lastUpdatedAt };
 }
 

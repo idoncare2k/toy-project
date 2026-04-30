@@ -15,6 +15,35 @@ function getDefaultModel(): GeminiModel {
   return _genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 }
 
+async function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function generateWithRetry(
+  model: GeminiModel,
+  prompt: string,
+  maxRetries = 3
+): Promise<string> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      const is429 = msg.includes("429") || msg.includes("Too Many Requests");
+      const retryMatch = msg.match(/retryDelay[^\d]*(\d+)/);
+      const waitMs = retryMatch ? parseInt(retryMatch[1]) * 1000 : 15_000;
+
+      if (is429 && attempt < maxRetries - 1) {
+        await sleep(waitMs);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("Max retries exceeded");
+}
+
 export async function translateAndSummarize(
   text: string,
   isKorean: boolean,
@@ -38,8 +67,7 @@ ${text}
 
 {"summaryLines":["줄1","줄2","줄3"],"content":"번역 전문"}`;
 
-  const result = await model.generateContent(prompt);
-  const raw = result.response.text();
+  const raw = await generateWithRetry(model, prompt);
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("Invalid response from Gemini");
 
