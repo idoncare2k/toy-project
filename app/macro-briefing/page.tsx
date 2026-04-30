@@ -5,7 +5,9 @@ import { ChartError } from "@/components/macro-briefing/chart-error";
 import { NoArticles } from "@/components/macro-briefing/no-articles";
 import type { BriefingSection } from "@/types/market";
 
-export const revalidate = 86400;
+// 빌드 시 정적 생성 금지 — Gemini API 번역이 60초 타임아웃 초과
+// 캐싱은 services/briefing.ts의 unstable_cache(revalidate=86400)가 담당
+export const dynamic = "force-dynamic";
 
 function formatUpdatedAt(iso: string): string {
   try {
