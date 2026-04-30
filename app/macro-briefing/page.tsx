@@ -5,8 +5,8 @@ import { ChartError } from "@/components/macro-briefing/chart-error";
 import { NoArticles } from "@/components/macro-briefing/no-articles";
 import type { BriefingSection } from "@/types/market";
 
-// 빌드 시 빈 데이터로 생성, 런타임에 unstable_cache가 실제 데이터 제공
-export const revalidate = 86400;
+// 빌드 시 정적 생성 안 함 — 런타임 메모리 캐시가 24시간 담당
+export const dynamic = "force-dynamic";
 
 function formatUpdatedAt(iso: string): string {
   try {

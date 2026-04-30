@@ -1,27 +1,20 @@
-import { unstable_cache } from "next/cache";
 import { fetchYield, fetchExchangeRate } from "./market-data";
 import { fetchEnglishNews, fetchKoreanNews } from "./news-fetcher";
 import { translateAndSummarize } from "./translator";
-import type { BriefingData, BriefingSection, ArticleSummary, MarketSeries } from "@/types/market";
+import type { BriefingData, BriefingSection, ArticleSummary } from "@/types/market";
 
 const YIELD_KEYWORD_EN = "treasury yield";
 const EXCHANGE_KEYWORD_KO = "원달러 환율";
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24시간
 
-const EMPTY_SERIES: MarketSeries = {
-  symbol: "", label: "", unit: "", data: [], lastUpdated: new Date().toISOString(),
-};
-
-const EMPTY_BRIEFING: BriefingData = {
-  yieldSection: { indicator: EMPTY_SERIES, articles: [] },
-  exchangeRateSection: { indicator: EMPTY_SERIES, articles: [] },
-  lastUpdatedAt: new Date().toISOString(),
-};
+// 모듈 레벨 메모리 캐시 — Vercel 웜 인스턴스에서 24시간 유지
+// (콜드 스타트 시 재생성, force-dynamic과 호환)
+let _cache: { data: BriefingData; expiresAt: number } | null = null;
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// 번역 호출 간 3초 간격 — Gemini 20 RPM 한도 안전하게 소비
 async function processArticles(
   rawArticles: { source: string; publishedAt: string; title: string; description: string; url: string }[],
   isKorean: boolean
@@ -31,13 +24,13 @@ async function processArticles(
     const a = rawArticles[i];
     const { description: _desc, ...rest } = a;
     const input = a.description || a.title;
-    if (i > 0) await sleep(3000); // 호출 간 3초 간격
+    if (i > 0) await sleep(3000);
     try {
       const { summaryLines, content } = await translateAndSummarize(input, isKorean);
       results.push({ ...rest, summaryLines, content });
     } catch {
-      const plainDesc = input.replace(/<[^>]+>/g, "").trim();
-      results.push({ ...rest, summaryLines: [a.title, "", ""], content: plainDesc || a.title });
+      const plain = input.replace(/<[^>]+>/g, "").trim();
+      results.push({ ...rest, summaryLines: [a.title, "", ""], content: plain || a.title });
     }
   }
   return results;
@@ -81,20 +74,22 @@ async function buildExchangeSection(): Promise<BriefingSection> {
   };
 }
 
-export async function fetchBriefingData(): Promise<BriefingData> {
-  // 빌드 시점에는 빈 데이터 반환 — Gemini 호출로 인한 빌드 타임아웃 방지
-  if (process.env.NEXT_PHASE === "phase-production-build") {
-    return EMPTY_BRIEFING;
-  }
-
+async function fetchBriefingData(): Promise<BriefingData> {
   const lastUpdatedAt = new Date().toISOString();
   const yieldSection = await buildYieldSection();
-  await sleep(3000); // 두 섹션 사이 3초 간격
+  await sleep(3000);
   const exchangeRateSection = await buildExchangeSection();
   return { yieldSection, exchangeRateSection, lastUpdatedAt };
 }
 
-export const getBriefingData =
-  process.env.NODE_ENV === "development"
-    ? fetchBriefingData
-    : unstable_cache(fetchBriefingData, ["briefing", "v3"], { revalidate: 86400 });
+export async function getBriefingData(): Promise<BriefingData> {
+  if (_cache && Date.now() < _cache.expiresAt) {
+    return _cache.data;
+  }
+  const data = await fetchBriefingData();
+  _cache = { data, expiresAt: Date.now() + CACHE_TTL_MS };
+  return data;
+}
+
+// 테스트용 export
+export { fetchBriefingData };
