@@ -80,4 +80,4 @@ export async function fetchBriefingData(): Promise<BriefingData> {
 export const getBriefingData =
   process.env.NODE_ENV === "development"
     ? fetchBriefingData
-    : unstable_cache(fetchBriefingData, ["briefing"], { revalidate: 86400 });
+    : unstable_cache(fetchBriefingData, ["briefing", "v2"], { revalidate: 86400 });
